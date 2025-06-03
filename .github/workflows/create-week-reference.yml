@@ -1,0 +1,113 @@
+# ファイル: .github/workflows/create-week-reference.yml
+name: Create Weekly Reference
+
+# → JST の毎週月曜 00:00 に実行するため、UTC では「日曜 15:00」の cron を指定
+on:
+  schedule:
+    - cron: '0 15 * * SUN'
+
+permissions:
+  contents: write  # リポジトリへのコミット権限を確保
+
+jobs:
+  generate-weekly-ref:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+
+      - name: 日付情報を計算して必要な値を出力
+        id: calc
+        run: |
+          set -e
+
+          # 1) JST の「いま」を取得 (月曜 0:00 JST 相当)
+          NOW_UTC=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          JST_DATE=$(date -u -d "$NOW_UTC +9 hours" '+%Y-%m-%d')
+
+          # 2) 週の月曜・日曜を計算
+          MON_DATE="$JST_DATE"
+          SUN_DATE=$(date -d "$MON_DATE +6 days" '+%Y-%m-%d')
+
+          # 3) 年・月の抽出と比較
+          MON_YEAR=$(date -d "$MON_DATE" '+%Y')
+          MON_MONTH=$(date -d "$MON_DATE" '+%m')
+          SUN_YEAR=$(date -d "$SUN_DATE" '+%Y')
+          SUN_MONTH=$(date -d "$SUN_DATE" '+%m')
+
+          if [ "$SUN_YEAR" -ne "$MON_YEAR" ]; then
+            CH_YEAR=$SUN_YEAR
+            CH_MONTH=$SUN_MONTH
+          elif [ "$SUN_MONTH" -gt "$MON_MONTH" ]; then
+            CH_YEAR=$SUN_YEAR
+            CH_MONTH=$SUN_MONTH
+          else
+            CH_YEAR=$MON_YEAR
+            CH_MONTH=$MON_MONTH
+          fi
+
+          # 4) その年・月の “1日を含む週の月曜日” を求める
+          FIRST_OF_MONTH="${CH_YEAR}-${CH_MONTH}-01"
+          DOW_FIRST=$(date -d "$FIRST_OF_MONTH" '+%u')
+          OFFSET=$(( DOW_FIRST - 1 ))
+          FIRST_MONDAY=$(date -d "$FIRST_OF_MONTH -${OFFSET} days" '+%Y-%m-%d')
+
+          # 5) 週の中で、CH_YEAR-CH_MONTH に最初にかかる日付を探す
+          REF_DATE=""
+          for i in {0..6}; do
+            CAND=$(date -d "$MON_DATE +${i} days" '+%Y-%m-%d')
+            CAND_YEAR=$(date -d "$CAND" '+%Y')
+            CAND_MONTH=$(date -d "$CAND" '+%m')
+            if [ "$CAND_YEAR" = "$CH_YEAR" ] && [ "$CAND_MONTH" = "$CH_MONTH" ]; then
+              REF_DATE="$CAND"
+              break
+            fi
+          done
+          if [ -z "$REF_DATE" ]; then
+            REF_DATE="$MON_DATE"
+          fi
+
+          # 6) “第何週”かを計算
+          REF_TS=$(date -d "$REF_DATE" '+%s')
+          FIRST_MONDAY_TS=$(date -d "$FIRST_MONDAY" '+%s')
+          DIFF_SEC=$(( REF_TS - FIRST_MONDAY_TS ))
+          DIFF_DAYS=$(( DIFF_SEC / 86400 ))
+          WEEKNUM=$(( ( DIFF_DAYS / 7 ) + 1 ))
+          WEEK=$(printf "%02d" "$WEEKNUM")
+
+          # 7) ファイル名を決定
+          FILENAME="${CH_YEAR}-${CH_MONTH}-week${WEEK}.md"
+
+          # GitHub Actions 用の出力としてセット
+          echo "##[set-output name=filename::$FILENAME"
+          echo "CH_YEAR=$CH_YEAR"   >> $GITHUB_OUTPUT
+          echo "CH_MONTH=$CH_MONTH" >> $GITHUB_OUTPUT
+          echo "WEEK=$WEEK"         >> $GITHUB_OUTPUT
+          echo "FILENAME=$FILENAME" >> $GITHUB_OUTPUT
+
+      - name: 既存ファイルの有無をチェック
+        id: check-file
+        run: |
+          if [ -f "references/${{ steps.calc.outputs.FILENAME }}" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 新規ファイルを生成してコミット
+        if: steps.check-file.outputs.exists == 'false'
+        run: |
+          TARGET="references/${{ steps.calc.outputs.FILENAME }}"
+          # テンプレートをコピーしてプレースホルダ置換
+          cp .github/templates/ref-week-template.md "$TARGET"
+          sed -i \
+            -e "s/{{YYYY}}/${{ steps.calc.outputs.CH_YEAR }}/g" \
+            -e "s/{{MM}}/${{ steps.calc.outputs.CH_MONTH }}/g" \
+            -e "s/{{NN}}/${{ steps.calc.outputs.WEEK }}/g" \
+            "$TARGET"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$TARGET"
+          git commit -m "Add weekly reference: ${{ steps.calc.outputs.FILENAME }}"
+          git push
