@@ -1,10 +1,11 @@
 # ファイル: .github/workflows/create-week-reference.yml
 name: Create Weekly Reference
 
-# → JST の毎週月曜 00:00 に実行するため、UTC では「日曜 15:00」の cron を指定
 on:
+  # JST の毎週月曜 00:00 に実行 (UTC では日曜 15:00)
   schedule:
     - cron: '0 15 * * SUN'
+  # 手動実行を可能にする
   workflow_dispatch:
     inputs:
       reason:
@@ -13,7 +14,7 @@ on:
         default: 'Manual trigger'
 
 permissions:
-  contents: write  # リポジトリへのコミット権限を確保
+  contents: write # リポジトリへのコミット権限を確保
 
 jobs:
   generate-weekly-ref:
@@ -21,17 +22,6 @@ jobs:
     steps:
       - name: リポジトリをチェックアウト
         uses: actions/checkout@v4
-
-      - name: テンプレートファイルの存在を確認
-        run: |
-          echo "Current working directory:"
-          pwd
-          echo "Listing .github/templates/ directory:"
-          ls -l .github/templates/
-          echo "Checking specific file:"
-          ls -l .github/templates/ref-week-template.md
-          echo "Listing entire repository recursively:"
-          ls -R
 
       - name: 日付情報を計算して必要な値を出力
         id: calc
