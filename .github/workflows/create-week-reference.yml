@@ -16,6 +16,17 @@ jobs:
       - name: リポジトリをチェックアウト
         uses: actions/checkout@v4
 
+      - name: テンプレートファイルの存在を確認
+        run: |
+          echo "Current working directory:"
+          pwd
+          echo "Listing .github/templates/ directory:"
+          ls -l .github/templates/
+          echo "Checking specific file:"
+          ls -l .github/templates/ref-week-template.md
+          echo "Listing entire repository recursively:"
+          ls -R
+
       - name: 日付情報を計算して必要な値を出力
         id: calc
         run: |
