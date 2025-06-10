@@ -5,6 +5,12 @@ name: Create Weekly Reference
 on:
   schedule:
     - cron: '0 15 * * SUN'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'テスト'
+        required: false
+        default: 'Manual trigger'
 
 permissions:
   contents: write  # リポジトリへのコミット権限を確保
